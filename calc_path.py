@@ -87,6 +87,17 @@ def calc_r_dot(sigma, R, is_prograde):
   return factor * 1/sigma * np.sqrt(R)
 
 @njit(fastmath=True)
+def calc_uptheta(C, theta, kappa, E, L, a):
+  return C + np.cos(theta)**2 * ((kappa + E**2)*a**2 - 1/np.sin(theta)**2 * L**2)
+
+@njit(fastmath=True)
+def calc_theta_dot(sigma, uptheta, is_prograde):
+  factor = -1
+  if is_prograde:
+    factor = 1
+  return factor * 1/sigma * np.sqrt(uptheta)
+
+@njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
