@@ -76,6 +76,10 @@ def calc_phi_dot(delta, m, r, sigma, L, E, a, theta):
   return 1/delta * ((1 - (2*m*r)/sigma)*L + E*(2*m*r)/sigma*a*np.sin(theta)**2)
 
 @njit(fastmath=True)
+def calc_R(delta, C, kappa, r, L, E, a):
+  return delta*(-C + kappa*r**2 - (L - a*E)**2) + (E*(r**2 + a**2) - L*a)**2
+
+@njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
