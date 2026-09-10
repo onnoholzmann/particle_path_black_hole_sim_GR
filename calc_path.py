@@ -109,6 +109,10 @@ def calc_theta_dot(sigma, uptheta, is_prograde):
   return factor * 1/sigma * np.sqrt(uptheta)
 
 @njit(fastmath=True)
+def calc_t_dot(delta, sigma, r, a, E, L, theta, mass):
+  return 1/delta * (E*(r**2 + a**2 + (2*mass*r*a**2)/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * (2*mass*r)/sigma * a * np.sin(theta)**2)
+
+@njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
@@ -136,11 +140,27 @@ class Relative_object:
     self.attractor = attractor
     self.pos = np.array(pos, dtype=float)
     self.speed = np.array(speed, dtype=float)
+    # self.E, self.L = self.calc_init_E_L_stable_orbit()
     self.E, self.L = self.calc_init_E_L()
     self.kappa = -1
     self.C = self.calc_C()
 
   def calc_init_E_L(self, is_prograde=True):
+    r = self.pos[0]
+    # factor = -1
+    # if is_prograde:
+      # factor = 1
+
+    sigma = calc_sigma(r, self.attractor.a, self.pos[2])
+    # delta = calc_delta(r, self.attractor.mass, self.attractor.a)
+    # t_dot = calc_t_dot(delta, sigma, r, self.attractor.a, self.E, self.)
+    t_dot = 1
+    E = (1 - (2*self.attractor.mass*r)/sigma)*t_dot + self.speed[1] * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])
+    L = -t_dot * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2 + self.speed[1] * (r**2 + self.attractor.a**2 + 2*self.attractor.mass*r*self.attractor.a**2/sigma * np.sin(self.pos[2])**2) * np.sin(self.pos[2])**2
+
+    return E, L
+
+  def calc_init_E_L_stable_orbit(self, is_prograde=True):
     # this is in an ideal scenario of theta=1/2*pi and an stable circular orbit
     # r = np.sqrt(np.sum((self.pos-self.attractor.pos)**2))
     r = self.pos[0]

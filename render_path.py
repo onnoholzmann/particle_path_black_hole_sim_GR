@@ -15,7 +15,7 @@ fps_history = []
 # sun = Attractor(1e38, (w/2, h/2), 0.5)
 # earth = Newtonian_object(sun, (w/2, h/4), (1.25, 0))
 sun2 = Attractor(1, (w/2, h/2), 0.5, convert_a=True)
-earth2 = Relative_object(sun2, (200, 0, np.pi/2), (0, 1.25, 0))
+earth2 = Relative_object(sun2, (200, 0, np.pi/2), (10, -1.25, 0))
 
 while running:
   for event in pygame.event.get():
