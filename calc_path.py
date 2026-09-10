@@ -98,13 +98,24 @@ def calc_theta_dot(sigma, uptheta, is_prograde):
   return factor * 1/sigma * np.sqrt(uptheta)
 
 @njit(fastmath=True)
-def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
+def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
 
   for _ in range(0, time_passed, dt):
-    
+    r = np.sqrt(np.sum((current_pos-attractor_pos)**2))
+    sigma = calc_sigma(r, a, current_pos[2])
+    delta = calc_delta(r, mass, a)
+    R = calc_R(delta, C, kappa, r, L, E, a)
+    uptheta = calc_uptheta(C, current_pos[2], kappa, E, L, a)
+
+    current_speed[0] = calc_r_dot(sigma, R, is_prograde)
+    current_speed[1] = calc_phi_dot(delta, mass, r, sigma, L, E, a, current_pos[2])
+    current_speed[2] = calc_theta_dot(sigma, uptheta, is_prograde)
+
     current_pos += current_speed * dt
+
+  return current_speed, current_pos
 
 class Relative_object:
   def __init__(self, attractor, pos, speed):
@@ -134,5 +145,6 @@ class Relative_object:
     return (sigma*self.self.speed[2])**2 - np.cos(self.pos[2])*((self.kappa + self.E**2)*self.attractor.a**2 - 1/np.sin(self.pos[2])**2 * self.L**2)
 
   def update(self, time_passed):
-    self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
+    # self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
+    self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, time_passed)
     return self.pos
