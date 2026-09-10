@@ -63,6 +63,13 @@ class Newtonian_object:
     """
     return self.pos
 
+@njit(fastmath=True)
+def calc_sigma(r, a, theta):
+  return r**2 + a**2+np.cos(theta)**2
+
+@njit(fastmath=True)
+def calc_delta(r, m, a):
+  return r**2 - 2*m*r + a**2
 
 @njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
@@ -72,10 +79,6 @@ def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
   for _ in range(0, time_passed, dt):
     
     current_pos += current_speed * dt
-
-@njit(fastmath=True)
-def calc_sigma(r, a, theta):
-  return r**2 + a**2+np.cos(theta)**2
 
 class Relative_object:
   def __init__(self, attractor, pos, speed):
