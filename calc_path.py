@@ -91,6 +91,8 @@ class Relative_object:
     self.pos = np.array(pos, dtype=float)
     self.speed = np.array(speed, dtype=float)
     self.E, self.L = self.calc_init_E_L()
+    self.kappa = -1
+    self.C = self.calc_C()
 
   def calc_init_E_L(self, is_prograde=True):
     # this is in an ideal scenario of theta=1/2*pi and an stable circular orbit
@@ -103,6 +105,11 @@ class Relative_object:
     L = (factor*np.sqrt(self.attractor.mass)*(r**2 - factor*2*self.attractor.a*np.sqrt(self.attractor.mass*r) + self.attractor.a**2)) / (np.sqrt(r)*np.sqrt(r**2 - 3*self.attractor.mass*r + factor*2*self.attractor.a*r))
 
     return E, L
+
+  def calc_C(self):
+    r = np.sqrt(np.sum((self.pos-self.attractor.pos)**2))
+    sigma = calc_sigma(r, self.attractor.a, self.pos[2])
+    return (sigma*self.self.speed[2])**2 - np.cos(self.pos[2])*((self.kappa + self.E**2)*self.attractor.a**2 - 1/np.sin(self.pos[2])**2 * self.L**2)
 
   def update(self, time_passed):
     self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
