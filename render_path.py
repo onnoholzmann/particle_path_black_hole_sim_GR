@@ -11,7 +11,7 @@ running = True
 font = pygame.font.SysFont("consolas", 20)
 fps_history = []
 
-sun = Attractor(1e38, (w/2, h/2))
+sun = Attractor(1e38, (w/2, h/2), 0.5)
 earth = Newtonian_object(sun, (w/2, h/4), (1.25, 0))
 
 while running:
