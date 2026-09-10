@@ -80,6 +80,13 @@ def calc_R(delta, C, kappa, r, L, E, a):
   return delta*(-C + kappa*r**2 - (L - a*E)**2) + (E*(r**2 + a**2) - L*a)**2
 
 @njit(fastmath=True)
+def calc_r_dot(sigma, R, is_prograde):
+  factor = -1
+  if is_prograde:
+    factor = 1
+  return factor * 1/sigma * np.sqrt(R)
+
+@njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
