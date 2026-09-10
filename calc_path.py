@@ -73,6 +73,10 @@ def step_relative(speed, pos, attractor_pos, mass, time_passed, dt=1):
     
     current_pos += current_speed * dt
 
+@njit(fastmath=True)
+def calc_sigma(r, a, theta):
+  return r**2 + a**2+np.cos(theta)**2
+
 class Relative_object:
   def __init__(self, attractor, pos, speed):
     # the pos and speed are in r, phi, theta, but keep theta=1/2*pi for now
@@ -83,10 +87,11 @@ class Relative_object:
 
   def calc_init_E_L(self, is_prograde=True):
     # this is in an ideal scenario of theta=1/2*pi and an stable circular orbit
+    r = np.sqrt(np.sum((self.pos-self.attractor.pos)**2))
     factor = -1
     if is_prograde:
       factor = 1
-    r = np.sqrt(np.sum((self.pos-self.attractor.pos)**2))
+
     E = (r**2 - 2*self.attractor.mass*r + factor*self.attractor.a*np.sqrt(self.attractor.mass)) / (r * np.sqrt(r**2 - 3*self.attractor.mass*r + factor*2*self.attractor.a*np.sqrt(self.attractor.mass*r)))
     L = (factor*np.sqrt(self.attractor.mass)*(r**2 - factor*2*self.attractor.a*np.sqrt(self.attractor.mass*r) + self.attractor.a**2)) / (np.sqrt(r)*np.sqrt(r**2 - 3*self.attractor.mass*r + factor*2*self.attractor.a*r))
 
