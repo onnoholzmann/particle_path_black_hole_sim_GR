@@ -110,8 +110,23 @@ def calc_theta_dot(sigma, uptheta, is_prograde):
   return factor * 1/sigma * np.sqrt(uptheta)
 
 @njit(fastmath=True)
-def calc_t_dot(delta, sigma, r, a, E, L, theta, mass):
-  return 1/delta * (E*(r**2 + a**2 + (2*mass*r*a**2)/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * (2*mass*r)/sigma * a * np.sin(theta)**2)
+def calc_t_dot(delta, r, phi_dot, r_dot, kappa, mass, a):
+  # ASSUMES EQUATORIAL
+
+  # return 1/delta * (E*(r**2 + a**2 + (2*mass*r*a**2)/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * (2*mass*r)/sigma * a * np.sin(theta)**2)
+  A = 1 - 2*mass/r
+  B = 2*mass*a/r
+  C = r**2 + a**2 + 2*mass*a**2/r
+  # HERE C ISN'T CARTERS CONSTANT
+
+  alpha = -A
+  beta = -2*B*phi_dot
+  gamma = C * phi_dot**2 + r**2/delta * r_dot**2 - kappa
+
+  t1 = (-beta + np.sqrt(beta**2 - 4*alpha*gamma)) / (2*alpha)
+  t2 = (-beta - np.sqrt(beta**2 - 4*alpha*gamma)) / (2*alpha)
+  # only return the positive t_dot
+  return max(t1, t2)
 
 @njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1):
@@ -149,14 +164,16 @@ def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograd
   return current_speed, current_pos, radial_sign
 
 class Relative_object:
-  def __init__(self, attractor, pos, speed):
+  def __init__(self, attractor, pos, speed, stable_orbit=True):
     # the pos and speed are in r, phi, theta, but keep theta=1/2*pi for now
     self.attractor = attractor
     self.pos = np.array(pos, dtype=float)
     self.speed = np.array(speed, dtype=float)
-    self.E, self.L = self.calc_init_E_L_stable_orbit()
-    # self.E, self.L = self.calc_init_E_L()
     self.kappa = -1
+    if stable_orbit:
+      self.E, self.L = self.calc_init_E_L_stable_orbit()
+    else:
+      self.E, self.L = self.calc_init_E_L()
     self.C = self.calc_C()
 
     self.radial_sign = 1.0
@@ -170,9 +187,12 @@ class Relative_object:
       # factor = 1
 
     sigma = calc_sigma(r, self.attractor.a, self.pos[2])
-    # delta = calc_delta(r, self.attractor.mass, self.attractor.a)
-    # t_dot = calc_t_dot(delta, sigma, r, self.attractor.a, self.E, self.)
-    t_dot = 1
+    delta = calc_delta(r, self.attractor.mass, self.attractor.a)
+    # phi_dot = calc_phi_dot(delta, self.attractor.mass, r, sigma, self.L, self.E, self.attractor.a, self.pos[2])
+    phi_dot = self.speed[1]
+    t_dot = calc_t_dot(delta, r, phi_dot, self.speed[0], self.kappa, self.attractor.mass, self.attractor.a)
+    print("t_dot =", t_dot)
+    # t_dot = 1
     E = (1 - (2*self.attractor.mass*r)/sigma)*t_dot + self.speed[1] * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2
     L = -t_dot * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2 + self.speed[1] * (r**2 + self.attractor.a**2 + 2*self.attractor.mass*r*self.attractor.a**2/sigma * np.sin(self.pos[2])**2) * np.sin(self.pos[2])**2
 
