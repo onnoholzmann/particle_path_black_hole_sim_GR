@@ -33,7 +33,7 @@ while running:
   # pygame.draw.circle(screen, (200, 200, 150), sun.pos, 20)
   # pygame.draw.circle(screen, (100, 200, 100), earth.update(5), 5)
   pygame.draw.circle(screen, (200, 200, 150), sun2.pos, 20)
-  pygame.draw.circle(screen, (100, 200, 100), earth2.update(100, 0.1), 5)
+  pygame.draw.circle(screen, (100, 200, 100), earth2.update(100, 0.001), 5)
 
    # --- FPS Tracking ---
   clock.tick(60)  # limits FPS to 60
