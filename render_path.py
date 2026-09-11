@@ -15,7 +15,7 @@ fps_history = []
 # sun = Attractor(1e38, (w/2, h/2), 0.5)
 # earth = Newtonian_object(sun, (w/2, h/4), (1.25, 0))
 sun2 = Attractor(1, (w/2, h/2), 0.5, convert_a=True)
-earth2 = Relative_object(sun2, (200, 0, np.pi/2), (0, 0.0004, 0), False)
+earth2 = Relative_object(sun2, (200, 0, np.pi/2), (-0.000002, 0.0002, 0), False)
 print("E =", earth2.E)
 print("L =", earth2.L)
 # earth2.E *= 1.0005
