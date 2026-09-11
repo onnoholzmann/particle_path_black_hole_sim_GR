@@ -72,7 +72,7 @@ class Newtonian_object:
 
 @njit(fastmath=True)
 def calc_sigma(r, a, theta):
-  return r**2 + a**2+np.cos(theta)**2
+  return r**2 + a**2*np.cos(theta)**2
 
 @njit(fastmath=True)
 def calc_delta(r, m, a):
@@ -87,13 +87,14 @@ def calc_R(delta, C, kappa, r, L, E, a):
   return delta*(-C + kappa*r**2 - (L - a*E)**2) + (E*(r**2 + a**2) - L*a)**2
 
 @njit(fastmath=True)
-def calc_r_dot(sigma, R, is_prograde):
+def calc_r_dot(sigma, R, is_prograde, radial_sign):
   factor = -1
   if is_prograde:
     factor = 1
+  # print("R =", R)
   if R < 0:
     R = 0
-  return factor * 1/sigma * np.sqrt(R)
+  return radial_sign * 1/sigma * np.sqrt(R)
 
 @njit(fastmath=True)
 def calc_uptheta(C, theta, kappa, E, L, a):
@@ -113,11 +114,16 @@ def calc_t_dot(delta, sigma, r, a, E, L, theta, mass):
   return 1/delta * (E*(r**2 + a**2 + (2*mass*r*a**2)/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * (2*mass*r)/sigma * a * np.sin(theta)**2)
 
 @njit(fastmath=True)
-def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, time_passed, dt=1):
+def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
 
-  for _ in range(0, time_passed, dt):
+  for _ in range(0, time_passed*max(1, int(1/dt)), 1):
+    old_pos = current_pos.copy()
+    if speed[1] > 0:
+      is_prograde = True
+    else:
+      is_prograde = False
     # r = np.sqrt(np.sum((current_pos-attractor_pos)**2))
     r = current_pos[0]
     sigma = calc_sigma(r, a, current_pos[2])
@@ -126,13 +132,21 @@ def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograd
     uptheta = calc_uptheta(C, current_pos[2], kappa, E, L, a)
     # print(delta, R, sigma, uptheta, r)
 
-    current_speed[0] = calc_r_dot(sigma, R, is_prograde)
+    current_speed[0] = calc_r_dot(sigma, R, is_prograde, radial_sign)
     current_speed[1] = calc_phi_dot(delta, mass, r, sigma, L, E, a, current_pos[2])
     current_speed[2] = calc_theta_dot(sigma, uptheta, is_prograde)
 
     current_pos += current_speed * dt
 
-  return current_speed, current_pos
+    if R >= 0.0:
+      delta_new = calc_delta(current_pos[0], mass, a)
+      R_new = calc_R(delta_new, C, kappa, current_pos[0], L, E, a)
+
+      if R_new < 0.0:
+        current_pos = old_pos
+        radial_sign *= -1.0
+
+  return current_speed, current_pos, radial_sign
 
 class Relative_object:
   def __init__(self, attractor, pos, speed):
@@ -140,10 +154,14 @@ class Relative_object:
     self.attractor = attractor
     self.pos = np.array(pos, dtype=float)
     self.speed = np.array(speed, dtype=float)
-    # self.E, self.L = self.calc_init_E_L_stable_orbit()
-    self.E, self.L = self.calc_init_E_L()
+    self.E, self.L = self.calc_init_E_L_stable_orbit()
+    # self.E, self.L = self.calc_init_E_L()
     self.kappa = -1
     self.C = self.calc_C()
+
+    self.radial_sign = 1.0
+    if self.speed[0] < 0.0:
+      self.radial_sign = -1.0
 
   def calc_init_E_L(self, is_prograde=True):
     r = self.pos[0]
@@ -155,7 +173,7 @@ class Relative_object:
     # delta = calc_delta(r, self.attractor.mass, self.attractor.a)
     # t_dot = calc_t_dot(delta, sigma, r, self.attractor.a, self.E, self.)
     t_dot = 1
-    E = (1 - (2*self.attractor.mass*r)/sigma)*t_dot + self.speed[1] * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])
+    E = (1 - (2*self.attractor.mass*r)/sigma)*t_dot + self.speed[1] * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2
     L = -t_dot * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2 + self.speed[1] * (r**2 + self.attractor.a**2 + 2*self.attractor.mass*r*self.attractor.a**2/sigma * np.sin(self.pos[2])**2) * np.sin(self.pos[2])**2
 
     return E, L
@@ -180,7 +198,7 @@ class Relative_object:
     sigma = calc_sigma(r, self.attractor.a, self.pos[2])
     return (sigma*self.speed[2])**2 - np.cos(self.pos[2])**2 * ((self.kappa + self.E**2)*self.attractor.a**2 - 1/np.sin(self.pos[2])**2 * self.L**2)
 
-  def update(self, time_passed):
+  def update(self, time_passed, dt=1):
     # self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
-    self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, time_passed)
+    self.speed, self.pos, self.radial_sign = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt)
     return (self.attractor.pos[0] + self.pos[0]*np.cos(self.pos[1]), self.attractor.pos[1] + self.pos[0]*np.sin(self.pos[1]))
