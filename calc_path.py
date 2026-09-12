@@ -129,6 +129,10 @@ def calc_t_dot(delta, r, phi_dot, r_dot, kappa, mass, a):
   return max(t1, t2)
 
 @njit(fastmath=True)
+def calc_t_dot_from_E_L(delta, sigma, r, a, E, L, mass, theta):
+  return 1/delta * (E * (r**2 + a**2 + 2*mass*r*a**2/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * 2*mass*r/sigma * a * np.sin(theta)**2)
+
+@njit(fastmath=True)
 def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1):
   current_speed = speed.copy()
   current_pos = pos.copy()
