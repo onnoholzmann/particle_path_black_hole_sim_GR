@@ -87,6 +87,11 @@ def calc_R(delta, C, kappa, r, L, E, a):
   return delta*(-C + kappa*r**2 - (L - a*E)**2) + (E*(r**2 + a**2) - L*a)**2
 
 @njit(fastmath=True)
+def calc_R_tollerance(delta, C, kappa, r, L, E, a):
+  # first calc the scale and then multiply by 1e-12 to adjust for the error of py floatingpoint calcs
+  return 1e-12 * (abs(delta*(-C + kappa*r**2 - (L - a*E)**2)) + abs((E*(r**2 + a**2) - L*a)**2) + 1)
+
+@njit(fastmath=True)
 def calc_r_dot(sigma, R, is_prograde, radial_sign):
   factor = -1
   if is_prograde:
@@ -133,13 +138,69 @@ def calc_t_dot_from_E_L(delta, sigma, r, a, E, L, mass, theta):
   return 1/delta * (E * (r**2 + a**2 + 2*mass*r*a**2/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * 2*mass*r/sigma * a * np.sin(theta)**2)
 
 @njit(fastmath=True)
-def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1):
+def step_relative_higher_accuracy(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1, use_global_time=False):
+  current_speed = speed.copy()
+  current_pos = pos.copy()
+  t_passed = 0
+  previous_speed = speed.copy()
+  previous_pos = pos.copy()
+  previous_t = 0
+
+  for _ in range(0, time_passed*max(1, int(1/dt)), 1):
+    old_pos = current_pos.copy()
+    if current_speed[1] > 0:
+      is_prograde = True
+    else:
+      is_prograde = False
+    # r = np.sqrt(np.sum((current_pos-attractor_pos)**2))
+    r = current_pos[0]
+    sigma = calc_sigma(r, a, current_pos[2])
+    delta = calc_delta(r, mass, a)
+    R = calc_R(delta, C, kappa, r, L, E, a)
+    uptheta = calc_uptheta(C, current_pos[2], kappa, E, L, a)
+    # print(delta, R, sigma, uptheta, r)
+
+    current_speed[0] = calc_r_dot(sigma, R, is_prograde, radial_sign)
+    current_speed[1] = calc_phi_dot(delta, mass, r, sigma, L, E, a, current_pos[2])
+    current_speed[2] = calc_theta_dot(sigma, uptheta, is_prograde)
+
+    current_pos += current_speed * dt
+
+    # it is better to move the interpolation outside of this loop, to increase accuracy and just get returned 2 coords and 2 speed vectors, but the values in the object should not be changed, so it is more accurate, because there would be less rounding and estimation/interpolation errors
+    if use_global_time:
+      delta_t = calc_t_dot_from_E_L(delta, sigma, r, a, E, L, mass, pos[2]) * dt
+      t_passed += delta_t
+
+    if R >= 0.0:
+      delta_new = calc_delta(current_pos[0], mass, a)
+      R_new = calc_R(delta_new, C, kappa, current_pos[0], L, E, a)
+
+      if R_new < 0.0:
+        if R_new > -calc_R_tollerance(delta_new, C, kappa, current_pos[0], L, E, a):
+          # handle rounding errors
+          current_pos[0] = old_pos[0]
+          current_speed[0] = 0.0
+        else:
+          current_pos = old_pos
+          if use_global_time:
+            t_passed -= delta_t
+          radial_sign *= -1.0
+    if t_passed >= time_passed:
+      break
+    if t_passed >= time_passed - delta_t*2:
+      previous_speed = current_speed.copy()
+      previous_pos = current_pos.copy()
+      previous_t = t_passed
+  return current_speed, current_pos, radial_sign, previous_speed, previous_pos, previous_t, t_passed
+
+@njit(fastmath=True)
+def step_relative(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1, use_global_time=False):
   current_speed = speed.copy()
   current_pos = pos.copy()
 
   for _ in range(0, time_passed*max(1, int(1/dt)), 1):
     old_pos = current_pos.copy()
-    if speed[1] > 0:
+    if current_speed[1] > 0:
       is_prograde = True
     else:
       is_prograde = False
@@ -183,6 +244,7 @@ class Relative_object:
     self.radial_sign = 1.0
     if self.speed[0] < 0.0:
       self.radial_sign = -1.0
+    self.time = 0
 
   def calc_init_E_L(self, is_prograde=True):
     r = self.pos[0]
@@ -195,7 +257,7 @@ class Relative_object:
     # phi_dot = calc_phi_dot(delta, self.attractor.mass, r, sigma, self.L, self.E, self.attractor.a, self.pos[2])
     phi_dot = self.speed[1]
     t_dot = calc_t_dot(delta, r, phi_dot, self.speed[0], self.kappa, self.attractor.mass, self.attractor.a)
-    print("t_dot =", t_dot)
+    # print("t_dot =", t_dot)
     # t_dot = 1
     E = (1 - (2*self.attractor.mass*r)/sigma)*t_dot + self.speed[1] * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2
     L = -t_dot * 2*self.attractor.mass*r/sigma * self.attractor.a * np.sin(self.pos[2])**2 + self.speed[1] * (r**2 + self.attractor.a**2 + 2*self.attractor.mass*r*self.attractor.a**2/sigma * np.sin(self.pos[2])**2) * np.sin(self.pos[2])**2
@@ -222,7 +284,35 @@ class Relative_object:
     sigma = calc_sigma(r, self.attractor.a, self.pos[2])
     return (sigma*self.speed[2])**2 - np.cos(self.pos[2])**2 * ((self.kappa + self.E**2)*self.attractor.a**2 - 1/np.sin(self.pos[2])**2 * self.L**2)
 
-  def update(self, time_passed, dt=1):
+  def update(self, time_passed, dt=1, use_global_time=False):
     # self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
-    self.speed, self.pos, self.radial_sign = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt)
+    # if use_global_time:
+      # self.speed, self.pos, self.radial_sign, previous_speed, previous_pos, previous_t, t_passed = step_relative_higher_accuracy(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt, True)
+    if use_global_time:
+      (self.speed, self.pos, self.radial_sign, prev_speed, prev_pos, prev_t, t_passed) = step_relative_higher_accuracy(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt, True)
+
+      span = t_passed - prev_t
+      frac = (time_passed - prev_t)/span if span > 0.0 else 1.0
+      frac = min(max(frac, 0.0), 1.0)
+
+      self.interp_pos = prev_pos + frac*(self.pos - prev_pos)   # state at EXACTLY time_passed
+
+      # speed consistent with the landed position (don't lerp prev_speed: it's one step stale)
+      r_i, th_i = self.interp_pos[0], self.interp_pos[2]
+      sigma_i = calc_sigma(r_i, self.attractor.a, th_i)
+      delta_i = calc_delta(r_i, self.attractor.mass, self.attractor.a)
+      R_i  = calc_R(delta_i, self.C, self.kappa, r_i, self.L, self.E, self.attractor.a)
+      up_i = calc_uptheta(self.C, th_i, self.kappa, self.E, self.L, self.attractor.a)
+      self.interp_speed = np.empty(3)
+      self.interp_speed[0] = calc_r_dot(sigma_i, R_i, True, self.radial_sign)
+      self.interp_speed[1] = calc_phi_dot(delta_i, self.attractor.mass, r_i, sigma_i,
+                                          self.L, self.E, self.attractor.a, th_i)
+      self.interp_speed[2] = calc_theta_dot(sigma_i, up_i, True)
+
+      self.time += time_passed          # exact, shared render clock
+      p = self.interp_pos
+      return (self.attractor.pos[0] + p[0]*np.cos(p[1]), self.attractor.pos[1] + p[0]*np.sin(p[1]))
+    else:
+      self.speed, self.pos, self.radial_sign = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt)
+    
     return (self.attractor.pos[0] + self.pos[0]*np.cos(self.pos[1]), self.attractor.pos[1] + self.pos[0]*np.sin(self.pos[1]))
