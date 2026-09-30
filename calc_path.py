@@ -137,6 +137,156 @@ def calc_t_dot(delta, r, phi_dot, r_dot, kappa, mass, a):
 def calc_t_dot_from_E_L(delta, sigma, r, a, E, L, mass, theta):
   return 1/delta * (E * (r**2 + a**2 + 2*mass*r*a**2/sigma * np.sin(theta)**2) * np.sin(theta)**2 - L * 2*mass*r/sigma * a * np.sin(theta)**2)
 
+# make solve_ivp handle when R<0
+def radial_turning_event(tau, y, mass, a, E, L, C, kappa, radial_sign):
+  r = y[0]
+  delta = calc_delta(r, mass, a)
+  return calc_R(delta, C, kappa, r, L, E, a)
+
+radial_turning_event.terminal = True
+radial_turning_event.direction = -1
+
+# make solve_ivp stop when you want the result
+def make_time_event(target_time):
+  def time_event(tau, y, *args):
+    return y[3] - target_time
+
+  time_event.terminal = True
+  time_event.direction = 1
+  return time_event
+
+# the differential part of the equ's, which needs to get integrated
+def differential(tau, y, mass, a, E, L, C, kappa, radial_sign, is_prograde=True):
+  r, phi, theta, t = y
+  sigma = calc_sigma(r, a, theta)
+  delta = calc_delta(r, mass, a)
+  R = calc_R(delta, C, kappa, r, L, E, a)
+  uptheta = calc_uptheta(C, theta, kappa, E, L, a)
+  # print(delta, R, sigma, uptheta, r)
+
+  # prevent errors, for when solve_ivp tries invalid values
+  if R < 0.0:
+    R = 0.0
+  if uptheta < 0.0:
+    uptheta = 0.0
+
+  r_dot = calc_r_dot(sigma, R, is_prograde, radial_sign)
+  phi_dot = calc_phi_dot(delta, mass, r, sigma, L, E, a, theta)
+  theta_dot = calc_theta_dot(sigma, uptheta, is_prograde)
+  t_dot = calc_t_dot_from_E_L(delta, sigma, r, a, E, L, mass, theta)
+
+  return [r_dot, phi_dot, theta_dot, t_dot]
+"""
+def calc_final_speed(y, mass, a, E, L, C, kappa, radial_sign, is_prograde=True):
+  r, phi, theta, t = y
+  sigma = calc_sigma(r, a, theta)
+  delta = calc_delta(r, mass, a)
+  R = calc_R(delta, C, kappa, r, L, E, a)
+  uptheta = calc_uptheta(C, theta, kappa, E, L, a)
+  # print(delta, R, sigma, uptheta, r)
+
+  # prevent errors, for when solve_ivp tries invalid values
+  if R < 0.0:
+    R = 0.0
+  if uptheta < 0.0:
+    uptheta = 0.0
+
+  r_dot = calc_r_dot(sigma, R, is_prograde, radial_sign)
+  phi_dot = calc_phi_dot(delta, mass, r, sigma, L, E, a, theta)
+  theta_dot = calc_theta_dot(sigma, uptheta, is_prograde)
+
+  return [r_dot, phi_dot, theta_dot]
+"""
+def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial_sign, time_passed, dt=1, ivp_solver_method="RK45", t_eval=[1]):
+  # y is the pos array, used in the differential equ's
+  y = np.array([pos[0], pos[1], pos[2], 0.0], dtype=float)
+  if t_eval is None:
+    t_targets = np.array([float(time_passed)])
+  else:
+    t_targets = np.asarray(t_eval, dtype=float)
+  target_time = float(time_passed)
+  # time_event = make_time_event(target_time)
+  time_event = make_time_event(t_targets[-1])
+
+  # start proper time "stopwatch" at 0
+  tau = 0.0
+  # init counter and stop
+  k = 0
+  n = t_targets.size
+  # init output arrays
+  pos_out = np.empty((n, 3))
+  speed_out = np.empty((n, 3))
+
+  # Use dt as the maximum step size, if provided.
+  if dt is not None and dt > 0:
+    max_step = float(dt)
+  else:
+    max_step = np.inf
+  max_step = np.inf
+
+  max_segments = 10000
+  for _ in range(max_segments):
+    # tau_end = tau + max(100.0, 10.0 * target_time + 100.0)
+    tau_end = tau + max(100.0, 10.0 * t_targets[-1] + 1000.0)
+
+    # dense output = True, makes it return an interpolating func
+    sol = scipy.integrate.solve_ivp(differential, (tau, tau_end), y, args=(mass, a, E, L, C, kappa, radial_sign), method=ivp_solver_method, max_step=max_step, rtol=1e-10, atol=1e-12, events=[time_event, radial_turning_event], dense_output=True)
+    if sol.status == -1:
+      raise RuntimeError("solve_ivp failed: " + sol.message)
+
+    # Latest state
+    y = sol.y[:, -1]
+    tau = sol.t[-1]
+
+    t_seg_end = sol.y[3, -1]
+    # sample every requested coordinate time inside this segment
+    while k < n and t_targets[k] <= t_seg_end + 1e-9:
+      tau_k = np.interp(t_targets[k], sol.y[3], sol.t)   # invert t(tau)
+      yk = sol.sol(tau_k)                                # dense polynomial
+      pos_out[k] = yk[:3]
+      speed_out[k] = np.array(
+        differential(tau_k, yk, mass, a, E, L, C, kappa, radial_sign))[:3]
+      k += 1
+
+    # check if the full time has passed
+    if sol.t_events[0].size > 0:
+      break
+      """
+      final_pos = y[:3].copy()
+      final_t = float(y[3])
+
+      # final_speed = calc_final_speed(final_pos, mass, a, E, L, kappa, C, radial_sign)
+      final_speed = differential(tau, y, mass, a, E, L, kappa, C, radial_sign)
+
+      # only return the speed of r, phi and theta
+      return (final_speed[:3].copy(), final_pos.copy(), radial_sign, final_t)
+      """
+
+    # handle R<0
+    if sol.t_events[1].size > 0:
+      radial_sign *= -1.0
+      y = sol.y[:, -1].copy()
+      eps = 1e-8 * max(1.0, abs(y[0]))
+      for d in (radial_sign, -radial_sign):
+          r_test = y[0] + d * eps
+          R_test = calc_R(calc_delta(r_test, mass, a), C, kappa, r_test, L, E, a)
+          if R_test >= 0.0:
+              y[0] = r_test
+              break
+      tau = sol.t[-1]
+      continue
+
+    # no event: extend the proper-time interval
+    y = sol.y[:, -1].copy()
+    tau = sol.t[-1]
+
+    # If no event happened, extend the proper-time interval and continue.
+    # continue
+  if k < n:
+    raise RuntimeError("Did not reach all requested snapshot times.")
+  return speed_out, pos_out, radial_sign, t_targets
+  raise RuntimeError("Too many radial turning-point segments.")
+
 @njit(fastmath=True)
 def step_relative_higher_accuracy(speed, pos, attractor_pos, mass, a, E, L, kappa, C, is_prograde, radial_sign, time_passed, dt=1, use_global_time=False):
   current_speed = speed.copy()
@@ -284,10 +434,15 @@ class Relative_object:
     sigma = calc_sigma(r, self.attractor.a, self.pos[2])
     return (sigma*self.speed[2])**2 - np.cos(self.pos[2])**2 * ((self.kappa + self.E**2)*self.attractor.a**2 - 1/np.sin(self.pos[2])**2 * self.L**2)
 
-  def update(self, time_passed, dt=1, use_global_time=False):
+  def update(self, time_passed, dt=1, use_global_time=False, ivp_solver_method=None, t_eval=None):
     # self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
     # if use_global_time:
       # self.speed, self.pos, self.radial_sign, previous_speed, previous_pos, previous_t, t_passed = step_relative_higher_accuracy(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt, True)
+    if ivp_solver_method:
+      # final_speed[:3], final_pos, radial_sign, final_t
+      (self.speed, self.pos, self.radial_sign, t_passed) = step_relative_higher_accuracy_solve_ivp(self.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, self.radial_sign, time_passed, dt, ivp_solver_method, t_eval)
+      self.time += t_passed
+      return (self.attractor.pos[0] + self.pos[0]*np.cos(self.pos[1]), self.attractor.pos[1] + self.pos[0]*np.sin(self.pos[1]))
     if use_global_time:
       (self.speed, self.pos, self.radial_sign, prev_speed, prev_pos, prev_t, t_passed) = step_relative_higher_accuracy(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt, True)
 
