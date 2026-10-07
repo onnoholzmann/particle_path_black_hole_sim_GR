@@ -96,7 +96,7 @@ def calculate_single_orbiter(orbiter):
   kappa = kappa_check(current_cache[-1][0], current_cache[-1][1], orbiter.attractor.mass, orbiter.attractor.a, orbiter.E, orbiter.L)
   # print("finished orbiter with a =", orbiter.attractor.a, "kappa = ", kappa)
 
-  return current_cache, orbiter.attractor.a, kappa
+  return current_cache, orbiter.attractor.a, kappa, orbiter.tau_all, orbiter.t_dot_all
 
 # gen data in paralel
 if __name__ == "__main__":
@@ -106,8 +106,13 @@ if __name__ == "__main__":
     # pool.map runs calculate_single_orbiter on each item in parallel
     results = pool.map(calculate_single_orbiter, orbiters)
   orbiters_cache = []
-  for current_cache, attractor_a, kappa in results:
+  tau_cache = []
+  t_dot_cache = []
+  for current_cache, attractor_a, kappa, tau_all, t_dot in results:
     orbiters_cache.append(current_cache)
+    tau_cache.append(tau_all)
+    t_dot_cache.append(t_dot)
+    assert round(abs(kappa+1), 14) == 0, "kappa isn't close to -1, so the results aren't valid"
     print("finished orbiter with a =", attractor_a, "kappa =", kappa)
   print(f'finished orbiter calc in {time.time()-time_start} seconds')
 
@@ -141,10 +146,16 @@ if __name__ == "__main__":
     d2 = calc_proper_distance(orbiters_cache[i][snapshot_index][0], orbiters_cache[j][snapshot_index][0], attractor_mass, a2)
     d = (d1 + d2)/2
     err = abs(d1 - d2)
+
+    d_tau = tau_cache[j][snapshot_index] - tau_cache[i][snapshot_index]
+    d_t_dot = t_dot_cache[j][snapshot_index] - t_dot_cache[i][snapshot_index]
+    avg_t_dot = (t_dot_cache[i][snapshot_index] + t_dot_cache[j][snapshot_index])/2
+
     if len(deltas) > 0:
       return deltas[i][j-i-1][snapshot_index], d, err
     else:
-      return [orbiters_cache[i][snapshot_index][0] - orbiters_cache[j][snapshot_index][0], orbiters_cache[i][snapshot_index][1] - orbiters_cache[j][snapshot_index][1]], d, err
+      # return [orbiters_cache[i][snapshot_index][0] - orbiters_cache[j][snapshot_index][0], orbiters_cache[i][snapshot_index][1] - orbiters_cache[j][snapshot_index][1]], d, err, float(d_tau), float(d_t_dot), float(t_dot_cache[i][snapshot_index]), float(t_dot_cache[j][snapshot_index]), float(min(t_dot_cache[j])), float(max(t_dot_cache[j]))
+      return [orbiters_cache[i][snapshot_index][0] - orbiters_cache[j][snapshot_index][0], orbiters_cache[i][snapshot_index][1] - orbiters_cache[j][snapshot_index][1]], d, err, float(d_tau), float(d_t_dot)
 
   def calc_proper_distance(p1, p2, M, a):
     # since the coords were at the same time, dt=0

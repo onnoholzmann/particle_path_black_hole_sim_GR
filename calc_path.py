@@ -216,6 +216,8 @@ def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial
   # init output arrays
   pos_out = np.empty((n, 3))
   speed_out = np.empty((n, 3))
+  tau_out = np.empty(n)
+  t_dot_out = np.empty(n)
 
   # Use dt as the maximum step size, if provided.
   if dt is not None and dt > 0:
@@ -244,8 +246,10 @@ def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial
       tau_k = np.interp(t_targets[k], sol.y[3], sol.t)   # invert t(tau)
       yk = sol.sol(tau_k)                                # dense polynomial
       pos_out[k] = yk[:3]
-      speed_out[k] = np.array(
-        differential(tau_k, yk, mass, a, E, L, C, kappa, radial_sign))[:3]
+      speed_out_k = np.array(differential(tau_k, yk, mass, a, E, L, C, kappa, radial_sign))
+      t_dot_out[k] = speed_out_k[3]
+      speed_out[k] = speed_out_k[:3]
+      tau_out[k] = tau_k
       k += 1
 
     # check if the full time has passed
@@ -284,7 +288,7 @@ def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial
     # continue
   if k < n:
     raise RuntimeError("Did not reach all requested snapshot times.")
-  return speed_out, pos_out, radial_sign, t_targets
+  return speed_out, pos_out, radial_sign, t_targets, tau_out, t_dot_out
   raise RuntimeError("Too many radial turning-point segments.")
 
 @njit(fastmath=True)
@@ -440,7 +444,10 @@ class Relative_object:
       # self.speed, self.pos, self.radial_sign, previous_speed, previous_pos, previous_t, t_passed = step_relative_higher_accuracy(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt, True)
     if ivp_solver_method:
       # final_speed[:3], final_pos, radial_sign, final_t
-      (self.speed, self.pos, self.radial_sign, t_passed) = step_relative_higher_accuracy_solve_ivp(self.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, self.radial_sign, time_passed, dt, ivp_solver_method, t_eval)
+      (self.speed, self.pos, self.radial_sign, t_passed, tau_passed, t_dot_passed) = step_relative_higher_accuracy_solve_ivp(self.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, self.radial_sign, time_passed, dt, ivp_solver_method, t_eval)
+      self.tau_all = tau_passed
+      self.t_dot_all = t_dot_passed
+      self.proper_time = tau_passed[-1]
       self.time += t_passed
       return (self.attractor.pos[0] + self.pos[0]*np.cos(self.pos[1]), self.attractor.pos[1] + self.pos[0]*np.sin(self.pos[1]))
     if use_global_time:
