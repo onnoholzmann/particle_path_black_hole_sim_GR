@@ -3,7 +3,9 @@ import numpy as np
 import time
 import scipy
 # for the multithreading(only got 2x speed increase, from ~30 sec to 15 sec)
-from multiprocessing import Pool 
+from multiprocessing import Pool
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 
 time_start = time.time()
 
@@ -177,3 +179,70 @@ if __name__ == "__main__":
   print(lookup_deltas(0, 99, 1))
   print(lookup_deltas(99, -1, 1))
   print(lookup_deltas(0, -1, 1))
+
+  def get_plot_points(i, j, end_time_index):
+    ds_list = np.empty(end_time_index)
+    dtau_list = np.empty(end_time_index)
+    for time_index in range(end_time_index):
+      current_deltas, ds, err, dtau, d_t_dot = lookup_deltas(i, j, time_index)
+      ds_list[time_index] = ds
+      dtau_list[time_index] = dtau
+    return ds_list, dtau_list
+
+  # plot the differences, with respect to t
+  fig, (ax_ds, ax_dtau) = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=(8, 6))
+  ax_ds.set_ylabel("ds(light s)")
+  ax_dtau.set_ylabel("dtau(s)")
+  ax_dtau.set_xlabel("t(s)")
+  fig.subplots_adjust(left=0.10, right=0.96, top=0.92, bottom=0.32, hspace=0.15)
+  ax_t  = plt.axes([0.10, 0.20, 0.86, 0.03])
+  ax_s1 = plt.axes([0.10, 0.13, 0.86, 0.03])
+  ax_s2 = plt.axes([0.10, 0.06, 0.86, 0.03])
+  s_t  = Slider(ax_t,  "t max", t_eval[1], t_eval[-1], valinit=t_eval[-1], valstep=100)
+  s_s1 = Slider(ax_s1, "a1",   -0.99, 0.99, valinit=0, valstep=0.01)
+  s_s2 = Slider(ax_s2, "a2",   -0.99, 0.99, valinit= 0.99, valstep=0.01)
+
+  i0, j0 = 99, 198
+  ds_full, dtau_full = get_plot_points(i0, j0, len(t_eval))
+
+  line_ds,   = ax_ds.plot(t_eval, ds_full)
+  line_dtau, = ax_dtau.plot(t_eval, dtau_full)
+
+  state = {"i": i0, "j": j0}
+  pair_cache = {(i0, j0): (ds_full, dtau_full)}
+
+  def idx_of_a(a):
+    return int(round((a + 0.99) / 0.01))
+
+  def get_pair(i, j):
+    key = (min(i, j), max(i, j))
+    if key not in pair_cache:
+      pair_cache[key] = get_plot_points(key[0], key[1], len(t_eval))
+    return pair_cache[key]
+
+  def redraw():
+    n = int(s_t.val / 100)
+    ds, dtau = get_pair(state["i"], state["j"])
+    line_ds.set_data(t_eval[:n], ds[:n])
+    line_dtau.set_data(t_eval[:n], dtau[:n])
+    for ax in (ax_ds, ax_dtau):
+      ax.relim()
+      ax.autoscale_view()
+    ax_ds.set_title(
+        f"a1 = {-0.99 + 0.01*state['i']:+.2f},  a2 = {-0.99 + 0.01*state['j']:+.2f}"
+        f"   |   t max = {int(s_t.val)} s"
+        f"   |   ds = {ds[n-1]:.4g},  dtau = {dtau[n-1]:.4g}")
+    fig.canvas.draw_idle()
+
+  def on_spin(_):
+    i, j = idx_of_a(s_s1.val), idx_of_a(s_s2.val)
+    if i == j:
+      return
+    state["i"], state["j"] = i, j
+    redraw()
+
+  s_t.on_changed(lambda _: redraw())
+  s_s1.on_changed(on_spin)
+  s_s2.on_changed(on_spin)
+
+  plt.show()
