@@ -8,6 +8,7 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 from matplotlib.gridspec import GridSpec
+from numba import njit
 
 time_start = time.time()
 
@@ -16,7 +17,7 @@ w, h = 1280, 720
 
 attractor_mass = 1
 attractors = [Attractor(attractor_mass, (w/2, h/2), a/100, convert_a=True) for a in range(-99, 100)]
-orbiters = [Relative_object(attractor, (125, 0, np.pi/2), (-0.000002, 0.0004, 0), False) for attractor in attractors]
+orbiters = [Relative_object(attractor, (200, 0, np.pi/2), (-0.000002, 0.0004, 0), False) for attractor in attractors]
 # orbiters = [Relative_object(attractor, (200, 0, np.pi/2), (0, 0, 0), True) for attractor in attractors]
 orbiters_cache = []
 
@@ -161,14 +162,31 @@ if __name__ == "__main__":
       # return [orbiters_cache[i][snapshot_index][0] - orbiters_cache[j][snapshot_index][0], orbiters_cache[i][snapshot_index][1] - orbiters_cache[j][snapshot_index][1]], d, err, float(d_tau), float(d_t_dot), float(t_dot_cache[i][snapshot_index]), float(t_dot_cache[j][snapshot_index]), float(min(t_dot_cache[j])), float(max(t_dot_cache[j]))
       return [orbiters_cache[i][snapshot_index][0] - orbiters_cache[j][snapshot_index][0], orbiters_cache[i][snapshot_index][1] - orbiters_cache[j][snapshot_index][1]], d, err, float(d_tau), float(d_t_dot)
 
-  def calc_proper_distance(p1, p2, M, a):
+  def calc_proper_distance_line_segment(p1, p2, M, a):
     # since the coords were at the same time, dt=0
     r, phi, theta = (p1 + p2)/2
     rho_2 = r**2 + a**2*math.cos(theta)**2
     delta = r**2 - 2*M*r + a**2
     d = p1-p2
-    ds_2 =  rho_2/delta*d[0]**2 + rho_2*d[2]**2 + (r**2 + a**2)*math.sin(theta)**2*d[1]**2 + 2*M*r/rho_2*(a*math.sin(theta)**2*d[1])**2
+    dphi = (d[1] + math.pi) % (2*math.pi) - math.pi
+    ds_2 =  rho_2/delta*d[0]**2 + rho_2*d[2]**2 + (r**2 + a**2)*math.sin(theta)**2*dphi**2 + 2*M*r/rho_2*(a*math.sin(theta)**2*dphi)**2
+    # ds_2 =  rho_2/delta*d[0]**2 + rho_2*d[2]**2 + (r**2 + a**2)*math.sin(theta)**2*d[1]**2 + 2*M*r/rho_2*(a*math.sin(theta)**2*d[1])**2
     return math.sqrt(ds_2)
+
+  @njit(fastmath=True)
+  def ds_integrand(lam, p1, p2, M, a):
+    # since the coords were at the same time, dt=0
+    r, phi, theta = p1 + lam*(p2 - p1)
+    rho_2 = r**2 + a**2*math.cos(theta)**2
+    delta = r**2 - 2*M*r + a**2
+    d = p2 - p1
+    dphi = (d[1] + math.pi) % (2*math.pi) - math.pi
+    ds_2 =  rho_2/delta*d[0]**2 + rho_2*d[2]**2 + (r**2 + a**2)*math.sin(theta)**2*dphi**2 + 2*M*r/rho_2*(a*math.sin(theta)**2*dphi)**2
+    return math.sqrt(ds_2)
+
+  def calc_proper_distance(p1, p2, M, a):
+    # quad returns (value, error), so take [0]
+    return scipy.integrate.quad(ds_integrand, 0, 1, args=(p1, p2, M, a), epsabs=1e-12, epsrel=1e-12)[0]
 
   print(lookup_deltas(0, 99, 999))
   print(lookup_deltas(99, -1, 999))
@@ -755,5 +773,9 @@ if __name__ == "__main__":
   ax_loops.legend(fontsize=8)
 
   fig_a.subplots_adjust(top=0.93, bottom=0.09, left=0.07, right=0.97)
+
+  # lock the x-axis to the actually simulated spin range
+  for ax in (ax_tau, ax_tdot, ax_prec_a, ax_loops):
+      ax.set_xlim(a_vals[0], a_vals[-1])
 
   plt.show()
