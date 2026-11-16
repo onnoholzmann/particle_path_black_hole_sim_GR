@@ -17,7 +17,8 @@ w, h = 1280, 720
 
 attractor_mass = 1
 attractors = [Attractor(attractor_mass, (w/2, h/2), a/100, convert_a=True) for a in range(-99, 100)]
-orbiters = [Relative_object(attractor, (175, 0, np.pi/2), (-0.000002, 0.0004, 0), False) for attractor in attractors]
+r_init = 175
+orbiters = [Relative_object(attractor, (r_init, 0, np.pi/2), (-0.000002, 0.0004, 0), False) for attractor in attractors]
 # orbiters = [Relative_object(attractor, (200, 0, np.pi/2), (0, 0, 0), True) for attractor in attractors]
 orbiters_cache = []
 
@@ -94,8 +95,9 @@ for orbiter in orbiters:
 print(f'finished orbiter calc in {time.time()-time_start} seconds')
 """
 t_eval = np.arange(100.0, 100000.0 + 1.0, 10.0)
-def calculate_single_orbiter(orbiter):
-  orbiter.update(10, 0.05, ivp_solver_method="RK45", t_eval=t_eval)
+schwarzschild_orbiter_tester = Relative_object(Attractor(attractor_mass, (w/2, h/2), 0, convert_a=True), (r_init, 0, np.pi/2), (-0.000002, 0.0004, 0), False)
+def calculate_single_orbiter(orbiter=schwarzschild_orbiter_tester, rtol=1e-10):
+  orbiter.update(10, 0.05, ivp_solver_method="RK45", t_eval=t_eval, rtol=rtol)
   current_cache = [[orbiter.pos[i].copy(), orbiter.speed[i].copy()] for i in range(len(t_eval))]
   orbiters_cache.append(current_cache)
   kappa = kappa_check(current_cache[-1][0], current_cache[-1][1], orbiter.attractor.mass, orbiter.attractor.a, orbiter.E, orbiter.L)
@@ -781,5 +783,42 @@ if __name__ == "__main__":
       ax.set_xlim(a_vals[0], a_vals[-1])
       ax.set_xticks([-0.99, -0.5, 0.0, 0.5, 0.99])
 
-  print(f'max kappa= {max(kappa_cache)}, min kappa= {min(kappa_cache)}')
+
+  # CHECK THE IMPORTANCE OF THE RTOL VALUE
+  rtol_vals = [10**-(i/4) for i in range(6*4, (12)*4+1)]
+  tasks = [(Relative_object(Attractor(attractor_mass, (w/2, h/2), 0, convert_a=True), (r_init, 0, np.pi/2), (-0.000002, 0.0004, 0), False), rtol_value) for rtol_value in rtol_vals]
+  with Pool() as pool:
+    results = pool.starmap(calculate_single_orbiter, tasks)
+
+  rtol_list = []
+  prec_list = []
+  kappa_err_list = []
+
+  for i, (current_cache, attractor_a, kappa, tau_all, t_dot) in enumerate(results):
+      rtol_val = rtol_vals[i]
+      
+      r_arr = np.array([e[0][0] for e in current_cache], dtype=float)
+      phi_arr = np.array([e[0][1] for e in current_cache], dtype=float)
+      
+      peaks, phi_turn, prec = calc_precession(r_arr, phi_arr, t=t_eval)
+      mean_prec = np.degrees(np.mean(prec)) if len(prec) > 0 else np.nan
+      
+      rtol_list.append(rtol_val)
+      prec_list.append(mean_prec)
+      kappa_err_list.append(abs(kappa + 1))
+
+  fig_rtol, (ax_rtol_prec) = plt.subplots(1, 1, figsize=(9, 4), sharex=True)
+  
+  # Precessie vs rtol
+  ax_rtol_prec.plot(rtol_list, prec_list, marker='o', linestyle='-', color='blue', label='Berekende precessie')
+  ax_rtol_prec.set_xscale('log')
+  ax_rtol_prec.set_ylabel("Precessie $\\Delta\\phi$ (graden)")
+  ax_rtol_prec.set_xlabel("Relatieve tolerantie (rtol)")
+  ax_rtol_prec.set_title("Invloed van de relatieve tolerantie (rtol) op de nauwkeurigheid")
+  ax_rtol_prec.grid(True, which="both", ls="--", alpha=0.7)
+  
+  best_prec = prec_list[-1]
+  ax_rtol_prec.axhline(best_prec, color='red', ls=':', lw=1.5, label=f"Precieste precessie ({best_prec:.4f}°)")
+  ax_rtol_prec.legend()
+  
   plt.show()

@@ -197,7 +197,7 @@ def calc_final_speed(y, mass, a, E, L, C, kappa, radial_sign, is_prograde=True):
 
   return [r_dot, phi_dot, theta_dot]
 """
-def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial_sign, time_passed, dt=1, ivp_solver_method="RK45", t_eval=[1]):
+def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial_sign, time_passed, dt=1, ivp_solver_method="RK45", t_eval=[1], rtol=1e-10):
   # y is the pos array, used in the differential equ's
   y = np.array([pos[0], pos[1], pos[2], 0.0], dtype=float)
   if t_eval is None:
@@ -232,7 +232,7 @@ def step_relative_higher_accuracy_solve_ivp(pos, mass, a, E, L, kappa, C, radial
     tau_end = tau + max(100.0, 10.0 * t_targets[-1] + 1000.0)
 
     # dense output = True, makes it return an interpolating func
-    sol = scipy.integrate.solve_ivp(differential, (tau, tau_end), y, args=(mass, a, E, L, C, kappa, radial_sign), method=ivp_solver_method, max_step=max_step, rtol=1e-10, atol=1e-12, events=[time_event, radial_turning_event], dense_output=True)
+    sol = scipy.integrate.solve_ivp(differential, (tau, tau_end), y, args=(mass, a, E, L, C, kappa, radial_sign), method=ivp_solver_method, max_step=max_step, rtol=rtol, atol=rtol*1e-2, events=[time_event, radial_turning_event], dense_output=True)
     if sol.status == -1:
       raise RuntimeError("solve_ivp failed: " + sol.message)
 
@@ -438,13 +438,13 @@ class Relative_object:
     sigma = calc_sigma(r, self.attractor.a, self.pos[2])
     return (sigma*self.speed[2])**2 - np.cos(self.pos[2])**2 * ((self.kappa + self.E**2)*self.attractor.a**2 - 1/np.sin(self.pos[2])**2 * self.L**2)
 
-  def update(self, time_passed, dt=1, use_global_time=False, ivp_solver_method=None, t_eval=None):
+  def update(self, time_passed, dt=1, use_global_time=False, ivp_solver_method=None, t_eval=None, rtol=1e-10):
     # self.speed, self.pos = step_relative(self.speed, self.pos, self.attractor.pos, self.attractor.mass, time_passed)
     # if use_global_time:
       # self.speed, self.pos, self.radial_sign, previous_speed, previous_pos, previous_t, t_passed = step_relative_higher_accuracy(self.speed, self.pos, self.attractor.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, True, self.radial_sign, time_passed, dt, True)
     if ivp_solver_method:
       # final_speed[:3], final_pos, radial_sign, final_t
-      (self.speed, self.pos, self.radial_sign, t_passed, tau_passed, t_dot_passed) = step_relative_higher_accuracy_solve_ivp(self.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, self.radial_sign, time_passed, dt, ivp_solver_method, t_eval)
+      (self.speed, self.pos, self.radial_sign, t_passed, tau_passed, t_dot_passed) = step_relative_higher_accuracy_solve_ivp(self.pos, self.attractor.mass, self.attractor.a, self.E, self.L, self.kappa, self.C, self.radial_sign, time_passed, dt, ivp_solver_method, t_eval, rtol)
       self.tau_all = tau_passed
       self.t_dot_all = t_dot_passed
       self.proper_time = tau_passed[-1]
