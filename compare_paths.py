@@ -17,7 +17,7 @@ w, h = 1280, 720
 
 attractor_mass = 1
 attractors = [Attractor(attractor_mass, (w/2, h/2), a/100, convert_a=True) for a in range(-99, 100)]
-orbiters = [Relative_object(attractor, (200, 0, np.pi/2), (-0.000002, 0.0004, 0), False) for attractor in attractors]
+orbiters = [Relative_object(attractor, (175, 0, np.pi/2), (-0.000002, 0.0004, 0), False) for attractor in attractors]
 # orbiters = [Relative_object(attractor, (200, 0, np.pi/2), (0, 0, 0), True) for attractor in attractors]
 orbiters_cache = []
 
@@ -113,10 +113,12 @@ if __name__ == "__main__":
   orbiters_cache = []
   tau_cache = []
   t_dot_cache = []
+  kappa_cache = []
   for current_cache, attractor_a, kappa, tau_all, t_dot in results:
     orbiters_cache.append(current_cache)
     tau_cache.append(tau_all)
     t_dot_cache.append(t_dot)
+    kappa_cache.append(kappa)
     assert round(abs(kappa+1), 14) == 0, "kappa isn't close to -1, so the results aren't valid"
     print("finished orbiter with a =", attractor_a, "kappa =", kappa)
   print(f'finished orbiter calc in {time.time()-time_start} seconds')
@@ -211,9 +213,9 @@ if __name__ == "__main__":
 
   # plot the differences, with respect to t
   fig, (ax_ds, ax_dtau) = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=(8, 6))
-  ax_ds.set_ylabel("ds(light s)")
-  ax_dtau.set_ylabel("dtau(s)")
-  ax_dtau.set_xlabel("t(s)")
+  ax_ds.set_ylabel("Ruimtelijke scheiding $ds$ (ls)")
+  ax_dtau.set_ylabel("Eigentijdverschil $\\Delta\\tau$ (s)")
+  ax_dtau.set_xlabel("Coördinaattijd $t$ (s)")
   fig.subplots_adjust(left=0.10, right=0.96, top=0.92, bottom=0.32, hspace=0.15)
   ax_t  = plt.axes([0.10, 0.20, 0.86, 0.03])
   ax_s1 = plt.axes([0.10, 0.13, 0.86, 0.03])
@@ -415,20 +417,20 @@ if __name__ == "__main__":
 
   # t_dot graph under the precession graph
   line_tdot, = ax_tdot.plot(t_eval, tdot0, linewidth=1.0)
-  ax_tdot.set_xlabel("t (s)")
-  ax_tdot.set_ylabel("t_dot = dt/dtau")
+  ax_tdot.set_xlabel("Coördinaattijd $t$ (s)")
+  ax_tdot.set_ylabel("Tijddilatatie $\\dot{t}$")
   ax_tdot.grid(True)
 
   # radius graph
   line_r, = ax_r.plot(t_eval, r0, linewidth=1.0)
-  ax_r.set_ylabel("r")
-  ax_omega.set_xlabel("t (s)")
+  ax_r.set_ylabel("Straal $r$ (ls)")
+  ax_r.set_xlabel("Coördinaattijd $t$ (s)")
   ax_r.grid(True)
 
   # angular velocity graph
   line_omega, = ax_omega.plot(t_eval, omega0, linewidth=1.0)
-  ax_omega.set_ylabel("omega = dphi/dt")
-  ax_omega.set_xlabel("t (s)")
+  ax_omega.set_ylabel("Hoeksnelheid $\\omega$")
+  ax_omega.set_xlabel("Coördinaattijd $t$ (s)")
   ax_omega.grid(True)
 
   ax_a = plt.axes([0.15, 0.13, 0.70, 0.03])
@@ -733,9 +735,9 @@ if __name__ == "__main__":
   ax_tau = fig_a.add_subplot(gs_a[0, 0])
   ax_tau.plot(a_vals, tau_final, lw=1.2)
   ax_tau.axvline(0.0, color="gray", lw=0.8, ls="--")
-  ax_tau.set_xlabel("a")
-  ax_tau.set_ylabel("tau at final t (s)")
-  ax_tau.set_title("Proper time elapsed at final coordinate time")
+  ax_tau.set_xlabel("Spinparameter $a$")
+  ax_tau.set_ylabel("Eigentijd $\\tau$ (s)")
+  ax_tau.set_title("Verstreken eigentijd bij vaste coördinaattijd $t$")
   ax_tau.grid(True)
 
   # 2. time-dilation factors (avg, min, max)
@@ -746,9 +748,9 @@ if __name__ == "__main__":
   ax_tdot.plot(a_vals, max_tdot, lw=1.0, color='red', ls='--', label='Maximum (periapsis)')
   
   ax_tdot.axvline(0.0, color="gray", lw=0.8, ls="--")
-  ax_tdot.set_xlabel("a")
-  ax_tdot.set_ylabel("t_dot = dt/dtau")
-  ax_tdot.set_title("Time-dilation factor (min, avg, max)")
+  ax_tdot.set_xlabel("Spinparameter $a$")
+  ax_tdot.set_ylabel("Tijddilatatie $\\dot{t}$")
+  ax_tdot.set_title("Tijddilatatie gedurende de baan")
   ax_tdot.grid(True)
   ax_tdot.legend(fontsize=8, loc='best')
 
@@ -756,19 +758,19 @@ if __name__ == "__main__":
   ax_prec_a = fig_a.add_subplot(gs_a[1, 0])
   ax_prec_a.plot(a_vals, prec_mean_deg, lw=1.2, marker=".", ms=3)
   ax_prec_a.axvline(0.0, color="gray", lw=0.8, ls="--")
-  ax_prec_a.set_xlabel("a")
-  ax_prec_a.set_ylabel("mean precession per radial period (deg)")
-  ax_prec_a.set_title("Periapsis precession per orbit")
+  ax_prec_a.set_xlabel("Spinparameter $a$")
+  ax_prec_a.set_ylabel("Precessie $\\Delta\\phi$ (graden)")
+  ax_prec_a.set_title("Periheliumverschuiving per radiale periode")
   ax_prec_a.grid(True)
 
   # 4. amount of loops
   ax_loops = fig_a.add_subplot(gs_a[1, 1])
-  ax_loops.plot(a_vals, loops_total, lw=1.2, label="azimuthal loops = dphi/2pi")
-  ax_loops.plot(a_vals, n_periods, lw=1.0, ls="--", label="radial periods")
+  ax_loops.plot(a_vals, loops_total, lw=1.2, label="Azimutaal ($\\Delta\\phi/2\\pi$)")
+  ax_loops.plot(a_vals, n_periods, lw=1.0, ls="--", label="Radiaal")
   ax_loops.axvline(0.0, color="gray", lw=0.8, ls="--")
-  ax_loops.set_xlabel("a")
-  ax_loops.set_ylabel("count")
-  ax_loops.set_title("Amount of loops versus spin")
+  ax_loops.set_xlabel("Spinparameter $a$")
+  ax_loops.set_ylabel("Aantal omwentelingen")
+  ax_loops.set_title("Azimutale vs. Radiale omwentelingen")
   ax_loops.grid(True)
   ax_loops.legend(fontsize=8)
 
@@ -777,5 +779,7 @@ if __name__ == "__main__":
   # lock the x-axis to the actually simulated spin range
   for ax in (ax_tau, ax_tdot, ax_prec_a, ax_loops):
       ax.set_xlim(a_vals[0], a_vals[-1])
+      ax.set_xticks([-0.99, -0.5, 0.0, 0.5, 0.99])
 
+  print(f'max kappa= {max(kappa_cache)}, min kappa= {min(kappa_cache)}')
   plt.show()
